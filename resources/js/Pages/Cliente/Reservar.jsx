@@ -1,4 +1,4 @@
-import { Head, useForm, router, usePage } from '@inertiajs/react';
+import { Head, useForm, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import ClienteLayout from '@/Layouts/ClienteLayout';
 import Stars from '@/Components/Stars';
@@ -18,7 +18,13 @@ function today() {
     return new Date().toISOString().split('T')[0];
 }
 
-export default function Reservar({ servicios, empleados, slots, diasDisponibles, perfilEmpleado, preselect }) {
+const NIVEL_CFG = {
+    1: { color: 'bg-emerald-400/10 border-emerald-400/20 text-emerald-300', dot: 'bg-emerald-400', icon: 'verified' },
+    2: { color: 'bg-blue-400/10 border-blue-400/20 text-blue-300',          dot: 'bg-blue-400',    icon: 'diamond'  },
+    3: { color: 'bg-gold/10 border-gold/20 text-gold',                      dot: 'bg-gold',        icon: 'star'     },
+};
+
+export default function Reservar({ servicios, empleados, slots, diasDisponibles, perfilEmpleado, preselect, fidelizacion }) {
     const [step, setStep]                   = useState(1);
     const [servicioId, setServicioId]       = useState(preselect?.servicio_id ?? null);
     const [empleadoId, setEmpleadoId]       = useState(preselect?.empleado_id ?? null);
@@ -38,14 +44,27 @@ export default function Reservar({ servicios, empleados, slots, diasDisponibles,
     const servicioActual = servicios.find(s => s.id === servicioId);
     const empleadoActual = empleados.find(e => e.id === empleadoId);
 
+    // Only show employees whose category matches the selected service (or employees with no category)
+    const empleadosFiltrados = servicioActual?.categoria_id
+        ? empleados.filter(e => !e.categoria_id || e.categoria_id === servicioActual.categoria_id)
+        : empleados;
+
     // Inicializa step si hay preselect
     useEffect(() => {
         if (preselect?.servicio_id) setStep(2);
     }, []);
 
     function selectServicio(id) {
+        const svc = servicios.find(s => s.id === id);
+        const emp = empleados.find(e => e.id === empleadoId);
+        // Clear selected employee if their category doesn't match the new service
+        if (emp && svc?.categoria_id && emp.categoria_id && emp.categoria_id !== svc.categoria_id) {
+            setEmpleadoId(null);
+            setData(d => ({ ...d, servicio_id: id, empleado_id: '', fecha: '', hora: '' }));
+        } else {
+            setData(d => ({ ...d, servicio_id: id }));
+        }
         setServicioId(id);
-        setData(d => ({ ...d, servicio_id: id }));
         setStep(2);
     }
 
@@ -138,6 +157,27 @@ export default function Reservar({ servicios, empleados, slots, diasDisponibles,
                 ))}
             </div>
 
+            {/* Banner fidelización */}
+            {fidelizacion?.nivel > 0 && (() => {
+                const cfg = NIVEL_CFG[fidelizacion.nivel];
+                return (
+                    <div className={`flex items-center gap-3 px-4 py-3 mb-6 rounded-sm border ${cfg.color}`}>
+                        <Icon name={cfg.icon} className="text-[20px] shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="font-sans text-[9px] uppercase tracking-widest opacity-70">
+                                Beneficio de fidelización · Cliente {fidelizacion.label}
+                            </p>
+                            <p className="font-sans text-sm font-medium">
+                                {fidelizacion.descuento}% de descuento aplicado en tu próxima reserva
+                            </p>
+                        </div>
+                        <span className="font-serif text-xl shrink-0">
+                            −{fidelizacion.descuento}%
+                        </span>
+                    </div>
+                );
+            })()}
+
             {/* ── STEP 1: Elegir servicio ── */}
             {step === 1 && (
                 <div>
@@ -187,7 +227,7 @@ export default function Reservar({ servicios, empleados, slots, diasDisponibles,
                                             {s.duracion} min
                                         </span>
                                         <span className="font-serif text-xl gold-gradient-text">
-                                            ${s.precio.toFixed(2)}
+                                            Bs {s.precio.toFixed(2)}
                                         </span>
                                     </div>
                                 </button>
@@ -210,7 +250,7 @@ export default function Reservar({ servicios, empleados, slots, diasDisponibles,
                                 <p className="font-serif text-base text-spa-on-light dark:text-spa-on-dark truncate">
                                     {servicioActual.nombre}
                                     <span className="font-sans text-xs text-spa-on-light-dim dark:text-spa-on-dark-dim ml-2 not-italic">
-                                        {servicioActual.duracion} min · ${servicioActual.precio.toFixed(2)}
+                                        {servicioActual.duracion} min · Bs {servicioActual.precio.toFixed(2)}
                                     </span>
                                 </p>
                             </div>
@@ -230,8 +270,13 @@ export default function Reservar({ servicios, empleados, slots, diasDisponibles,
                             <p className="font-sans text-xs text-spa-on-light-dim dark:text-spa-on-dark-dim mb-4">
                                 Todos nuestros especialistas están certificados
                             </p>
+                            {empleadosFiltrados.length === 0 && (
+                                <div className="p-4 rounded-sm border border-amber-400/20 bg-amber-400/5 text-amber-400 font-sans text-sm">
+                                    No hay especialistas disponibles para este servicio.
+                                </div>
+                            )}
                             <div className="space-y-3">
-                                {empleados.map(e => (
+                                {empleadosFiltrados.map(e => (
                                     <div key={e.id}
                                          className={`flex items-center gap-3 p-4 rounded-sm
                                                     transition-all duration-200 border
@@ -492,12 +537,34 @@ export default function Reservar({ servicios, empleados, slots, diasDisponibles,
                                 </div>
 
                                 <div className="border-t border-spa-border dark:border-gold/10 pt-4 mb-5">
+                                    {fidelizacion?.descuento > 0 && servicioActual && (
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className="font-sans text-[10px] text-spa-on-light-dim dark:text-spa-on-dark-dim uppercase tracking-wider">
+                                                Precio normal
+                                            </span>
+                                            <span className="font-sans text-sm text-spa-on-light-dim dark:text-spa-on-dark-dim line-through">
+                                                Bs {servicioActual.precio.toFixed(2)}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {fidelizacion?.descuento > 0 && (
+                                        <div className={`flex justify-between items-center mb-2 px-2 py-1 rounded-sm ${NIVEL_CFG[fidelizacion.nivel]?.color}`}>
+                                            <span className="font-sans text-[9px] uppercase tracking-wider">
+                                                Desc. fidelidad {fidelizacion.descuento}%
+                                            </span>
+                                            <span className="font-sans text-sm">
+                                                −Bs {(servicioActual?.precio * fidelizacion.descuento / 100).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    )}
                                     <div className="flex justify-between items-center">
                                         <span className="font-sans text-xs text-spa-on-light-dim dark:text-spa-on-dark-dim uppercase tracking-wider">
                                             Total
                                         </span>
                                         <span className="font-serif text-2xl gold-gradient-text">
-                                            ${servicioActual?.precio.toFixed(2)}
+                                            Bs {servicioActual
+                                                ? (servicioActual.precio * (1 - (fidelizacion?.descuento ?? 0) / 100)).toFixed(2)
+                                                : '—'}
                                         </span>
                                     </div>
                                 </div>

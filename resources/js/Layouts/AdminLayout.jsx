@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import { Link, usePage } from '@inertiajs/react';
 import { useTheme } from '@/Contexts/ThemeContext';
 import FlashToast from '@/Components/FlashToast';
@@ -6,6 +7,9 @@ const NAV = [
     { label: 'Dashboard',    icon: 'dashboard',     route: 'admin.dashboard'          },
     { label: 'Citas',        icon: 'event',         route: 'admin.citas.index'        },
     { label: 'Servicios',    icon: 'auto_awesome',  route: 'admin.servicios.index'    },
+    { label: 'Categorías',   icon: 'category',      route: 'admin.categorias.index'   },
+    { label: 'Paquetes',     icon: 'local_offer',   route: 'admin.paquetes.index'     },
+    { label: 'Solicitudes',  icon: 'inbox',         route: 'admin.solicitudes.index', badge: true },
     { label: 'Especialistas',icon: 'groups',        route: 'admin.especialistas.index'},
     { label: 'Clientes',     icon: 'person',        route: 'admin.clientes.index'     },
 ];
@@ -20,9 +24,22 @@ function Icon({ name, className = '' }) {
 }
 
 export default function AdminLayout({ children, title = '' }) {
-    const { auth } = usePage().props;
+    const { auth, solicitudesPendientes, notificacionesAdmin } = usePage().props;
     const { dark, toggle } = useTheme();
     const currentRoute = route().current();
+
+    const [bellOpen, setBellOpen] = useState(false);
+    const bellRef = useRef(null);
+
+    useEffect(() => {
+        function handleClickOutside(e) {
+            if (bellRef.current && !bellRef.current.contains(e.target)) {
+                setBellOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     return (
         <>
@@ -45,15 +62,22 @@ export default function AdminLayout({ children, title = '' }) {
 
                 {/* Nav */}
                 <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
-                    {NAV.map(({ label, icon, route: r }) => {
+                    {NAV.map(({ label, icon, route: r, badge }) => {
                         const isActive = r && (currentRoute === r || currentRoute?.startsWith(r.replace('.index', '')));
                         const Tag = r ? Link : 'a';
                         const props = r ? { href: route(r) } : { href: '#' };
+                        const pendCount = badge ? (solicitudesPendientes ?? 0) : 0;
                         return (
                             <Tag key={label} {...props}
                                 className={`nav-item ${isActive ? 'active' : ''}`}>
                                 <Icon name={icon} className="text-[20px]" />
-                                <span>{label}</span>
+                                <span className="flex-1">{label}</span>
+                                {badge && pendCount > 0 && (
+                                    <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-gold
+                                                       text-[9px] font-bold text-spa-bg flex items-center justify-center">
+                                        {pendCount}
+                                    </span>
+                                )}
                             </Tag>
                         );
                     })}
@@ -108,11 +132,78 @@ export default function AdminLayout({ children, title = '' }) {
 
                     <div className="flex items-center gap-4">
                         {/* Notificaciones */}
-                        <button className="relative text-spa-on-light-dim dark:text-spa-on-dark-dim
-                                           hover:text-gold-mid transition-colors">
-                            <Icon name="notifications" className="text-[22px]" />
-                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-gold rounded-full" />
-                        </button>
+                        <div className="relative" ref={bellRef}>
+                            <button
+                                onClick={() => setBellOpen(o => !o)}
+                                className="relative text-spa-on-light-dim dark:text-spa-on-dark-dim hover:text-gold-mid transition-colors"
+                            >
+                                <Icon name="notifications" className="text-[22px]" />
+                                {notificacionesAdmin?.total > 0 && (
+                                    <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-gold rounded-full" />
+                                )}
+                            </button>
+
+                            {bellOpen && (
+                                <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-spa-surface border border-spa-border dark:border-gold/20 rounded-sm shadow-xl z-50">
+                                    <div className="px-4 py-3 border-b border-spa-border dark:border-gold/10">
+                                        <p className="font-sans text-[11px] uppercase tracking-widest text-gold">
+                                            Notificaciones
+                                            {notificacionesAdmin?.total > 0 && (
+                                                <span className="ml-2 text-[9px] bg-gold text-spa-bg px-1.5 py-0.5 rounded-full font-bold">
+                                                    {notificacionesAdmin.total}
+                                                </span>
+                                            )}
+                                        </p>
+                                    </div>
+
+                                    <div className="max-h-72 overflow-y-auto divide-y divide-spa-border dark:divide-gold/10">
+                                        {notificacionesAdmin?.items?.length > 0 ? (
+                                            notificacionesAdmin.items.map((item, i) => (
+                                                <div key={i} className="px-4 py-3 hover:bg-spa-ivory dark:hover:bg-spa-surface-low transition-colors">
+                                                    <div className="flex items-start gap-2">
+                                                        <Icon
+                                                            name={item.tipo === 'solicitud' ? 'inbox' : 'event'}
+                                                            className="text-[15px] text-gold mt-0.5 shrink-0"
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-[12px] text-spa-on-light dark:text-spa-on-dark leading-snug">
+                                                                {item.texto}
+                                                            </p>
+                                                            <p className="text-[10px] text-spa-on-light-dim dark:text-spa-on-dark-dim mt-0.5">
+                                                                {item.hace}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="px-4 py-6 text-center text-[12px] text-spa-on-light-dim dark:text-spa-on-dark-dim">
+                                                Sin notificaciones pendientes
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {notificacionesAdmin?.items?.length > 0 && (
+                                        <div className="px-4 py-2.5 border-t border-spa-border dark:border-gold/10 flex gap-4">
+                                            <Link
+                                                href={route('admin.solicitudes.index')}
+                                                className="text-[10px] text-gold hover:text-gold-mid uppercase tracking-widest transition-colors"
+                                                onClick={() => setBellOpen(false)}
+                                            >
+                                                Ver solicitudes →
+                                            </Link>
+                                            <Link
+                                                href={route('admin.citas.index')}
+                                                className="text-[10px] text-gold hover:text-gold-mid uppercase tracking-widest transition-colors"
+                                                onClick={() => setBellOpen(false)}
+                                            >
+                                                Ver citas →
+                                            </Link>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         {/* Toggle dark/light */}
                         <button onClick={toggle}

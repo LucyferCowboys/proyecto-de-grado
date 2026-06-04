@@ -1,6 +1,7 @@
 import { Head, useForm } from "@inertiajs/react";
 import { useTheme } from "@/Contexts/ThemeContext";
 import InputError from "@/Components/InputError";
+import { useState } from "react";
 
 function Icon({ name }) {
     return (
@@ -52,8 +53,8 @@ export default function Login({ status, canResetPassword }) {
     const { data, setData, post, processing, errors, reset } = useForm({
         email: "",
         password: "",
-        remember: false,
     });
+    const [showPassword, setShowPassword] = useState(false);
 
     const submit = (e) => {
         e.preventDefault();
@@ -203,14 +204,14 @@ export default function Login({ status, canResetPassword }) {
                                             className="font-sans text-[10px] text-gold-mid hover:text-gold
                                                       uppercase tracking-widest transition-colors"
                                         >
-                                            ¿Olvidaste?
+                                            ¿Olvidaste tu contraseña?
                                         </a>
                                     )}
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <Icon name="lock" />
                                     <input
-                                        type="password"
+                                        type={showPassword ? "text" : "password"}
                                         name="password"
                                         autoComplete="current-password"
                                         value={data.password}
@@ -220,29 +221,19 @@ export default function Login({ status, canResetPassword }) {
                                         placeholder="••••••••"
                                         className="input-luxury-light dark:input-luxury flex-1"
                                     />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="text-spa-on-light-dim dark:text-spa-on-dark-dim hover:text-gold transition-colors"
+                                    >
+                                        <Icon name={showPassword ? "visibility_off" : "visibility"} />
+                                    </button>
                                 </div>
                                 <InputError
                                     message={errors.password}
                                     className="mt-1 text-xs"
                                 />
                             </div>
-
-                            {/* Remember */}
-                            <label className="flex items-center gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    name="remember"
-                                    checked={data.remember}
-                                    onChange={(e) =>
-                                        setData("remember", e.target.checked)
-                                    }
-                                    className="w-4 h-4 rounded-none border-gold/40 text-gold-mid
-                                               focus:ring-gold/30 bg-transparent"
-                                />
-                                <span className="font-sans text-xs text-spa-on-light-dim dark:text-spa-on-dark-dim">
-                                    Mantener sesión activa 30 días
-                                </span>
-                            </label>
 
                             {/* Submit */}
                             <button
@@ -267,10 +258,14 @@ export default function Login({ status, canResetPassword }) {
                                     className="font-sans text-[9px] text-spa-on-light-dim/50 dark:text-gold/30
                                                  uppercase tracking-[0.3em]"
                                 >
-                                    Spa Marcelo Ruiz &amp; Ninfa Rodriguez
+                                    ¿No tienes cuenta?
                                 </span>
                                 <span className="h-px flex-1 bg-spa-border dark:bg-gold/10" />
                             </div>
+                            <a href={route("register")}
+                               className="font-sans text-[10px] uppercase tracking-widest text-gold-mid hover:text-gold transition-colors">
+                                Crear cuenta →
+                            </a>
                         </div>
                     </div>
                 </div>

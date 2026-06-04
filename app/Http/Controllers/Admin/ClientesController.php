@@ -5,15 +5,21 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Cita;
 use App\Models\Cliente;
+use App\Models\Usuario;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 use Inertia\Response;
+use Illuminate\Support\Facades\Auth;
 
 class ClientesController extends Controller
 {
     public function index(Request $request): Response
     {
-        $query = Cliente::with('usuario')->withCount('citas');
+        $query = Cliente::with('usuario')
+            ->withCount('citas')
+            ->withCount(['citas as citas_completadas' => fn($q) => $q->where('estado', 'COMPLETADA')]);
 
         if ($request->filled('search')) {
             $search = $request->search;
@@ -37,12 +43,94 @@ class ClientesController extends Controller
                     ->first()
                     ?->fecha_hora_inicio
                     ?->format('d/m/Y') ?? '—',
+                'usuario_id'    => $c->usuario_id,
+                'bloqueado'     => $c->usuario?->bloqueado_hasta && now()->isBefore($c->usuario->bloqueado_hasta),
+                'fidelizacion'  => (function () use ($c) {
+                    $meses       = (int) $c->created_at->diffInMonths(now());
+                    $completadas = (int) ($c->citas_completadas ?? 0);
+                    if ($meses >= 12)                          return ['nivel' => 3, 'descuento' => 15, 'label' => 'VIP'];
+                    if ($meses >= 6 && $completadas >= 5)      return ['nivel' => 2, 'descuento' => 10, 'label' => 'Frecuente'];
+                    if ($meses >= 3 && $completadas >= 2)      return ['nivel' => 1, 'descuento' =>  5, 'label' => 'Regular'];
+                    return ['nivel' => 0, 'descuento' => 0, 'label' => null];
+                })(),
+            ]);
+
+        $eliminados = Cliente::onlyTrashed()
+            ->with(['usuario' => fn($q) => $q->withTrashed()])
+            ->withCount('citas')
+            ->get()
+            ->map(fn($c) => [
+                'id'          => $c->id,
+                'nombre'      => $c->usuario?->nombre ?? '—',
+                'correo'      => $c->usuario?->correo ?? '—',
+                'total_citas' => $c->citas_count,
+                'eliminado_en'=> $c->deleted_at->format('d/m/Y'),
             ]);
 
         return Inertia::render('Admin/Clientes', [
-            'clientes' => $clientes,
-            'filters'  => $request->only(['search']),
+            'clientes'   => $clientes,
+            'eliminados' => $eliminados,
+            'filters'    => $request->only(['search']),
         ]);
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'nombre'           => 'required|string|max:255',
+            'correo'           => 'required|string|lowercase|email|max:255|unique:usuarios,correo',
+            'telefono'         => 'required|string|max:20',
+            'fecha_nacimiento' => 'nullable|date',
+        ]);
+
+        $usuario = Usuario::create([
+            'nombre'                => $request->nombre,
+            'correo'                => $request->correo,
+            'password'              => Hash::make($request->telefono),
+            'rol'                   => 'CLIENTE',
+            'activo'                => true,
+            'correo_verificado'     => true,
+            'debe_cambiar_password' => true,
+        ]);
+
+        Cliente::create([
+            'usuario_id'       => $usuario->id,
+            'telefono'         => $request->telefono,
+            'fecha_nacimiento' => $request->fecha_nacimiento,
+        ]);
+
+        return redirect()->route('admin.clientes.index')
+            ->with('success', "Cliente \"{$request->nombre}\" registrado. Contraseña inicial: {$request->telefono}");
+    }
+
+    public function destroy(Cliente $cliente): RedirectResponse
+    {
+        $nombre = $cliente->usuario?->nombre;
+        $cliente->usuario?->delete();
+        $cliente->delete();
+
+        return back()->with('success', "Cliente \"{$nombre}\" eliminado.");
+    }
+
+    public function restore(string $id): RedirectResponse
+    {
+        $cliente = Cliente::withTrashed()->findOrFail($id);
+        // withTrashed() needed because the usuario is still soft-deleted when we restore
+        $usuario = $cliente->usuario()->withTrashed()->first();
+        $usuario?->restore();
+        $cliente->restore();
+
+        return back()->with('success', "Cuenta de \"{$usuario?->nombre}\" restaurada.");
+    }
+
+    public function desbloquear(Usuario $usuario): RedirectResponse
+    {
+        $usuario->forceFill([
+            'intentos_fallidos' => 0,
+            'bloqueado_hasta'   => null,
+        ])->saveQuietly();
+
+        return back()->with('success', "Cuenta de \"{$usuario->nombre}\" desbloqueada.");
     }
 
     public function show(Cliente $cliente): Response
